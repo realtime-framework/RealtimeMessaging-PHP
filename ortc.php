@@ -1,30 +1,22 @@
 <?php
 
 /*!
- * Open Realtime Connectivity JavaScript Library
+ * Realtime Messaging PHP Library
+ * Copyright 2016, Realtime
  *
- * Copyright 2011, IBT, SA
- *
- * ORTC is part of our framework and it's powered by the world's first Real-Time Web Platform by IBT
- *
- * Join our movement to transform the World Wide Web into the Real-Time Web!
- *
- * Interested in Real-Time technology? See what we can do for your business today.
- * 
- * Transform your old website into an exciting Real-Time experience!
- * 
- * Improve the interaction with your visitor to a level never seen before
- * and increase visitor recurrency and loyalty.
- *
- * Visit us at www.realtime.co and learn more.
- *
- * Date: Thu Dec 05 2013 v2.1.12
+ * Date: Fri Oct 14 2016 v2.1.14
  */
 
 class Request {
-    static function execute($method, $url, $data=array(), $referer='', $timeout=30, $user_agent=''){
-        // Convert the data array into URL Parameters like a=b&foo=bar etc.
-        $data = http_build_query($data);
+    static function execute($method, $url, $data=array(), $referer='', $timeout=30, $user_agent='', $content_type='application/x-www-form-urlencoded'){
+
+        if($content_type=='application/json') {
+            $data = json_encode($data);
+        } else {
+            // Convert the data array into URL Parameters like a=b&foo=bar etc.
+            $data = http_build_query($data);
+        }
+        
         // parse the given URL
         $url = parse_url($url);
         // extract host and path
@@ -49,19 +41,19 @@ class Request {
         // open a socket connection - timeout: 30 sec
         $fp = fsockopen($protocol.$host, $port, $errno, $errstr, $timeout);
         if($fp) {
-                // send the request headers:
+            // send the request headers:
             fputs($fp, "$method $path HTTP/1.1\r\n");
             fputs($fp, "host: $host\r\n");
             if($referer != '') fputs($fp, "Referer: $referer\r\n");
             if($method == 'POST'){
-                fputs($fp, "Content-type: application/x-www-form-urlencoded\r\n");
+                fputs($fp, "Content-type: " . $content_type . "\r\n");
                 fputs($fp, "Content-length: " . strlen($data) . "\r\n");
             }
             fputs($fp, "Connection: close\r\n\r\n");
             fputs($fp, $data);
             $result = '';
             while(!feof($fp)){
-                        // receive the results of the request
+                // receive the results of the request
                 $result .= fgets($fp, 128);
             }
         } else {
@@ -112,7 +104,7 @@ class Request {
             );
     }       
     
-        // return as structured array:
+    // return as structured array:
     return array(
         'errcode' => 0,
         'status' => 'ok',
@@ -124,7 +116,7 @@ class Request {
 }
 
 class Realtime{
-	private $ortc_data;
+    private $ortc_data;
     private $is_version_21;
     
     function __construct($balancer, $app_key, $priv_key, $token){
@@ -157,7 +149,7 @@ class Realtime{
         }
         if('http://undefined:undefined' == $matches[0]) return '';
         
-		// success
+        // success
         return $matches[0];
     }
     
@@ -192,10 +184,10 @@ class Realtime{
 
          while ($part <= $numberOfParts){
 
-				$ret = $this->send_message_part($url, $channel, $guid."_".$part."-".$numberOfParts."_".substr($msg,($part-1) * 699, 699), $response ); // $response returned used for debug purposes
-				if (!$ret)  return false;
+                $ret = $this->send_message_part($url, $channel, $guid."_".$part."-".$numberOfParts."_".substr($msg,($part-1) * 699, 699), $response ); // $response returned used for debug purposes
+                if (!$ret)  return false;
 
-				$part = $part + 1;
+                $part = $part + 1;
 
             }
 
@@ -203,7 +195,7 @@ class Realtime{
         }
         else
         {
-			$ret = $this->send_message_part($url,$channel,$guid."_1-1_".$msg,$response); // returning $response for debug purpose
+            $ret = $this->send_message_part($url,$channel,$guid."_1-1_".$msg,$response); // returning $response for debug purpose
             return $ret;
         }
     }
@@ -211,7 +203,7 @@ class Realtime{
     
     public function auth($channels, $private = 0, $expire_time = 180000, &$response = Array() ){
 
-                // post permissions
+        // post permissions
         $fields = array(
             'AK' => $this->ortc_data['app_key'],
             'PK' => $this->ortc_data['priv_key'],
@@ -225,16 +217,72 @@ class Realtime{
             $fields[$channel] = $perms;
         }
         $url = $this->_get_server();
-                if(!$url) return false; // no server available
-                
-                $auth_path = '/authenticate';
-                
-                $content = Request::execute('POST', $url.$auth_path, $fields, $referer='', 15, 'ortc-php'); // /auth or /authenticate depends on the server version
+        if(!$url) return false; // no server available
+        
+        $auth_path = '/authenticate';
+        
+        $content = Request::execute('POST', $url.$auth_path, $fields, $referer='', 15, 'ortc-php'); // /auth or /authenticate depends on the server version
 
-                $response = $content;
-                
-                return ( $content['errcode'] == 0 );        
-            }
+        $response = $content;
+        
+        return ( $content['errcode'] == 0 );        
+    }
+
+
+    public function enable_presence($channel, $metadata = 1, &$response = Array() ){
+
+        $fields = array(
+            'privatekey' => $this->ortc_data['priv_key'],
+            'metadata' => $metadata
+        );
+        
+        $url = $this->_get_server();
+        if(!$url) return false; // no server available
+        
+        $enable_path = '/presence/enable/' . $this->ortc_data['app_key'] . '/' . $channel;        
+        $content = Request::execute('POST', $url.$enable_path, $fields, $referer='', 15, 'ortc-php', 'application/json');
+        $response = $content;
+        
+        return ( $content['errcode'] == 0 );        
+    }
+
+
+    public function disable_presence($channel, &$response = Array() ){
+
+        $fields = array(
+            'privatekey' => $this->ortc_data['priv_key']
+        );
+        
+        $url = $this->_get_server();
+        if(!$url) return false; // no server available
+        
+        $enable_path = '/presence/disable/' . $this->ortc_data['app_key'] . '/' . $channel;        
+        $content = Request::execute('POST', $url.$enable_path, $fields, $referer='', 15, 'ortc-php', 'application/json');
+        $response = $content;
+        
+        return ( $content['errcode'] == 0 );        
+    }
+
+
+    public function get_presence($channel, &$response = Array() ){
+
+        $fields = array(
+        );
+        
+        $url = $this->_get_server();
+        if(!$url) return false; // no server available
+        
+        $get_presence_path = '/presence/' . $this->ortc_data['app_key'] . '/' . $this->ortc_data['token'] . '/' . $channel;        
+        $content = Request::execute('GET', $url.$get_presence_path, $fields, $referer='', 15, 'ortc-php');
+
+        if($content['errcode'] == 0){
+            $response = $content['content'];
+        } else {
+            $response = $content['response'][1];
+        }
+        
+        return ( $content['errcode'] == 0 );        
+    }
             
 }
 ?>
